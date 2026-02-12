@@ -1,5 +1,4 @@
 name: build-tobaru
-
 on:
   workflow_dispatch:
   push:
@@ -21,14 +20,16 @@ jobs:
           url=$(curl -fsSIL -o /dev/null -w '%{url_effective}' https://github.com/cfal/tobaru/releases/latest)
           echo "tag=${url##*/}" >> "$GITHUB_OUTPUT"
 
-      - id: sha
-        run: |
-          echo "sha=$(git ls-remote https://github.com/cfal/tobaru.git refs/heads/master | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: cfal/tobaru
+          ref: master
+          fetch-depth: 1
+          path: tobaru
 
-      - run: |
-          git clone https://github.com/cfal/tobaru.git tobaru
-          cd tobaru
-          git checkout "${{ steps.sha.outputs.sha }}"
+      - id: sha
+        working-directory: tobaru
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -49,18 +50,12 @@ jobs:
           test -f "$BIN"
           cp "$BIN" tobaru && strip tobaru 2>/dev/null || true
           tar -czf "tobaru-${{ matrix.target }}-${{ steps.tag.outputs.tag }}.tar.gz" tobaru
-          rm -f tobaru
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: "tobaru ${{ steps.tag.outputs.tag }}"
-          prerelease: false
           overwrite_files: true
-          files: |
-            tobaru/tobaru-*.tar.gz
-          body: |
-            Built from upstream master HEAD:
-            - tobaru: ${{ steps.sha.outputs.sha }}
+          files: tobaru/tobaru-*.tar.gz
+          body: ${{ steps.sha.outputs.sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
