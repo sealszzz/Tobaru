@@ -11,21 +11,26 @@ jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
+      max-parallel: 1
       matrix:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
 
     steps:
-      - id: tag
-        run: |
-          url=$(curl -fsSIL -o /dev/null -w '%{url_effective}' https://github.com/cfal/tobaru/releases/latest)
-          echo "tag=${url##*/}" >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@v4
         with:
           repository: cfal/tobaru
           ref: master
           fetch-depth: 1
+          fetch-tags: true
           path: tobaru
+
+      - id: tag
+        working-directory: tobaru
+        run: |
+          set -euo pipefail
+          ver="$(awk -F'"' '/^version *= *"/{print $2; exit}' Cargo.toml)"
+          test -n "$ver"
+          echo "tag=v${ver}" >> "$GITHUB_OUTPUT"
 
       - id: sha
         working-directory: tobaru
@@ -46,14 +51,19 @@ jobs:
           else
             cargo build --release --target ${{ matrix.target }}
           fi
+
           BIN="target/${{ matrix.target }}/release/tobaru"
           test -f "$BIN"
-          cp "$BIN" tobaru && strip tobaru 2>/dev/null || true
+
+          cp "$BIN" tobaru
+          strip tobaru 2>/dev/null || true
+
           tar -czf "tobaru-${{ matrix.target }}-${{ steps.tag.outputs.tag }}.tar.gz" tobaru
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
           overwrite_files: true
           files: tobaru/tobaru-*.tar.gz
           body: ${{ steps.sha.outputs.sha }}
